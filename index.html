@@ -241,6 +241,7 @@ function projName(id){var p=projOf(id);return p?p.name:'Gelöschtes Projekt'}
 function activeProjects(){return S.projects.filter(function(p){return !p.archived}).sort(function(a,b){return a.name.localeCompare(b.name,'de')})}
 function periodStart(){
   var d=new Date();
+  if(S.period==='heute') return isoDate(d);
   if(S.period==='woche'){d.setDate(d.getDate()-((d.getDay()+6)%7));return isoDate(d)}
   if(S.period==='monat') return isoDate(new Date(d.getFullYear(),d.getMonth(),1));
   return '0000-00-00';
@@ -334,12 +335,12 @@ function viewProject(id){
 
 function viewUebersicht(){
   var from=periodStart(), rate=+S.settings.rate||0;
-  var list=S.entries.filter(function(e){return e.date>=from}), tot=sums(list);
+  var list=S.entries.filter(function(e){return S.period==='heute'?e.date===from:e.date>=from}), tot=sums(list);
   var per=S.projects.map(function(p){return {p:p,s:sums(list.filter(function(e){return e.projectId===p.id}))}})
     .filter(function(x){return x.s.min||x.s.mat}).sort(function(a,b){return b.s.min-a.s.min});
   var max=per.reduce(function(m,x){return Math.max(m,x.s.min)},0)||1;
   var h='<div class="seg" style="margin-top:18px" role="group" aria-label="Zeitraum">'+
-    [['woche','Woche'],['monat','Monat'],['gesamt','Gesamt']].map(function(x){
+    [['heute','Heute'],['woche','Woche'],['monat','Monat'],['gesamt','Gesamt']].map(function(x){
       return '<button data-act="period" data-p="'+x[0]+'" aria-pressed="'+(S.period===x[0])+'">'+x[1]+'</button>'}).join('')+'</div>';
   h+='<div class="stats"><div class="stat"><span>Arbeitszeit</span><strong>'+fmtHM(tot.min)+' h</strong></div><div class="stat"><span>Material</span><strong>'+EUR.format(tot.mat)+'</strong></div>'+
      (rate?'<div class="stat"><span>Gesamt</span><strong>'+EUR.format(tot.min/60*rate+tot.mat)+'</strong></div>':'')+'</div>';
