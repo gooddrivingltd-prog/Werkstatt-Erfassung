@@ -139,11 +139,25 @@ textarea.copy{min-height:200px; font:14px var(--mono)}
 #toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(76px + env(safe-area-inset-bottom,0px)); z-index:30;
   background:var(--ink); color:var(--bg); padding:10px 16px; border-radius:6px; font-weight:500; max-width:90%; text-align:center}
 @media (prefers-reduced-motion: no-preference){ .btn{transition:transform .08s} }
+
+/* v3: Einstellungen-Knopf, Plus-Knopf, Startliste */
+.top{align-items:center}
+.top h1{white-space:nowrap}
+.top .date{text-align:left; margin-top:6px}
+.gear{width:44px; height:44px; border:0; background:none; color:var(--ink); cursor:pointer; display:grid; place-items:center; border-radius:50%}
+.fab{position:fixed; z-index:8; right:max(16px, env(safe-area-inset-right,0px)); bottom:calc(80px + env(safe-area-inset-bottom,0px));
+  width:60px; height:60px; border-radius:50%; border:0; background:var(--accent); color:var(--on-accent); box-shadow:0 4px 14px rgba(0,0,0,.3); cursor:pointer; display:grid; place-items:center}
+.fab:active{transform:scale(.96)}
+.row .go{color:var(--accent); font:600 14px var(--display); letter-spacing:.12em; text-transform:uppercase}
+.chip{max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+body{padding-block:0 170px}
+#toast{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header class="top"><h1>Werkstatt-Buch</h1><div class="date" id="today"></div></header>
+  <header class="top"><div><h1>Werkstatt-Buch</h1><div class="date" id="today"></div></div>
+    <button class="gear" data-act="settings" aria-label="Einstellungen"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></button></header>
   <main id="view"></main>
 </div>
 <nav class="tabs" aria-label="Bereiche">
@@ -151,6 +165,7 @@ textarea.copy{min-height:200px; font:14px var(--mono)}
   <button class="tab" data-act="tab" data-tab="projekte">Projekte</button>
   <button class="tab" data-act="tab" data-tab="uebersicht">Übersicht</button>
 </nav>
+<button class="fab" id="fab" data-act="fab" aria-label="Buchung hinzufügen" hidden><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
 <div id="sheet" hidden>
   <div class="scrim" data-act="close"></div>
   <div class="panel" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
@@ -187,7 +202,7 @@ function parseDuration(s){
 }
 function parseNum(s){var v=parseFloat(String(s||'').trim().replace(',','.'));return isFinite(v)?v:null}
 
-var S={tab:'heute',open:null,period:'woche',projects:[],entries:[],timer:null,settings:{},tProj:'',tText:'',
+var S={tab:'heute',open:null,period:'woche',projects:[],entries:[],timer:null,settings:{},tProj:'',tText:'',lastType:'zeit',showAll:false,
   loaded:false,hasDb:false,dbError:null};
 var L={projects:false,entries:false};
 
@@ -273,30 +288,33 @@ function daysHtml(list,showProj,limit){
 }
 function kindTag(p){return '<span class="tag">'+(p.kind==='intern'?'Intern':'Fahrzeug')+'</span>'}
 
+function lastUseMap(){var m={};S.entries.forEach(function(e){m[e.projectId]=Math.max(m[e.projectId]||0,e.createdAt||0)});return m}
+function recentProjects(){
+  var lu=lastUseMap();
+  return activeProjects().sort(function(a,b){return (lu[b.id]||b.createdAt||0)-(lu[a.id]||a.createdAt||0)});
+}
 function viewHeute(){
-  var act=activeProjects(), running=S.timer;
-  var proj=running?running.projectId:(S.tProj&&projOf(S.tProj)&&!projOf(S.tProj).archived?S.tProj:(act[0]?act[0].id:''));
-  var h='';
+  var running=S.timer, h='';
   if(hasExamples()) h+='<div class="notice">Die Einträge hier sind Beispieldaten zum Ausprobieren.<br><button class="btn small" data-act="delExamples">Beispieldaten entfernen</button></div>';
-  if(!act.length && !running){
+  var rp=recentProjects();
+  if(!rp.length && !running){
     h+='<div class="empty" style="margin-top:18px"><b>Noch kein Projekt</b>Lege zuerst ein Fahrzeug oder ein internes Projekt an, dann kannst du Zeit und Material darauf buchen.</div>'+
        '<button class="btn primary block" data-act="newProject">Erstes Projekt anlegen</button>';
     return h;
   }
-  h+='<section class="timer'+(running?' running':'')+'" aria-label="Stoppuhr">';
   if(running){
-    h+='<div class="who">'+esc(projName(running.projectId))+'</div>'+(running.text?'<div class="muted">'+esc(running.text)+'</div>':'')+
-       '<div class="clock" id="clock">0:00:00</div><button class="btn dark block" data-act="timerToggle">Stopp und buchen</button>';
+    h+='<section class="timer running" aria-label="Stoppuhr"><div class="who">'+esc(projName(running.projectId))+'</div>'+
+       '<label class="label" for="tText">Tätigkeit (optional)</label><input type="text" id="tText" value="'+esc(S.tText||running.text||'')+'" placeholder="z. B. Kabelbaum verlegen">'+
+       '<div class="clock" id="clock">0:00:00</div><button class="btn dark block" data-act="timerToggle">Stopp und buchen</button></section>';
   } else {
-    h+='<label class="label" for="tProj">Projekt</label><select id="tProj">'+
-       act.map(function(p){return '<option value="'+esc(p.id)+'"'+(p.id===proj?' selected':'')+'>'+esc(p.name)+'</option>'}).join('')+'</select>'+
-       '<label class="label" for="tText">Tätigkeit (optional)</label><input type="text" id="tText" value="'+esc(S.tText)+'" placeholder="z. B. Kabelbaum verlegen">'+
-       '<div class="clock" id="clock">0:00:00</div><button class="btn primary block" data-act="timerToggle">Start</button>';
+    var shown=S.showAll?rp:rp.slice(0,6);
+    h+='<h2 class="sec"><span>Stoppuhr starten</span></h2><div class="list">'+shown.map(function(p){
+      return '<button class="row" data-act="startTimer" data-id="'+esc(p.id)+'"><span class="main"><b>'+esc(p.name)+'</b><small>'+kindTag(p)+esc(p.customer||'')+'</small></span><span class="val go">Start</span></button>';
+    }).join('')+'</div>';
+    if(rp.length>6&&!S.showAll) h+='<button class="btn small block" style="margin-top:10px" data-act="showAll">Alle '+rp.length+' Projekte zeigen</button>';
   }
-  h+='</section>';
-  h+='<div class="btns" style="margin-top:14px"><button class="btn" data-act="newEntry" data-type="zeit">Zeit nachtragen</button><button class="btn" data-act="newEntry" data-type="material">Material buchen</button></div>';
   if(!S.entries.length){
-    h+='<div class="empty"><b>Noch keine Buchungen</b>Starte die Stoppuhr oder buche Material. Alles erscheint hier nach Tag sortiert.</div>';
+    h+='<div class="empty"><b>Noch keine Buchungen</b>Tippe auf ein Projekt, um die Stoppuhr zu starten, oder unten rechts auf das Plus für Zeit und Material.</div>';
   } else h+=daysHtml(S.entries,true,7);
   return h;
 }
@@ -313,7 +331,7 @@ function viewProjekte(){
   }
   if(!act.length) h+='<div class="empty"><b>Keine aktiven Projekte</b>Ein Projekt ist ein Fahrzeug, ein Kunde oder eine interne Arbeit wie Formelauto oder Werkstatt allgemein.</div>';
   else h+='<h2 class="sec"><span>Aktiv</span><span class="sum">'+act.length+'</span></h2>'+rows(act);
-  if(arch.length) h+='<h2 class="sec"><span>Archiv</span><span class="sum">'+arch.length+'</span></h2>'+rows(arch);
+  if(arch.length) h+='<h2 class="sec"><span>Abgeschlossen</span><span class="sum">'+arch.length+'</span></h2>'+rows(arch);
   return h;
 }
 
@@ -322,14 +340,13 @@ function viewProject(id){
   var list=S.entries.filter(function(e){return e.projectId===id}), s=sums(list);
   var h='<button class="back" data-act="back">← Alle Projekte</button>';
   h+='<h2 style="font:700 30px/1.05 var(--display);letter-spacing:.03em;text-transform:uppercase;margin:6px 0 4px;overflow-wrap:anywhere">'+esc(p.name)+'</h2>';
-  h+='<div class="muted">'+kindTag(p)+esc(p.customer||'')+(p.archived?' · archiviert':'')+'</div>'+(p.note?'<p style="margin:8px 0 0;overflow-wrap:anywhere">'+esc(p.note)+'</p>':'');
+  h+='<div class="muted">'+kindTag(p)+esc(p.customer||'')+(p.archived?' · abgeschlossen':'')+'</div>'+(p.note?'<p style="margin:8px 0 0;overflow-wrap:anywhere">'+esc(p.note)+'</p>':'');
   var rate=+S.settings.rate||0;
   h+='<div class="stats"><div class="stat"><span>Arbeitszeit</span><strong>'+fmtHM(s.min)+' h</strong></div><div class="stat"><span>Material</span><strong>'+EUR.format(s.mat)+'</strong></div>'+
      (rate?'<div class="stat"><span>Gesamt</span><strong>'+EUR.format(s.min/60*rate+s.mat)+'</strong></div>':'')+'</div>';
-  h+='<div class="btns" style="margin-top:14px"><button class="btn primary" data-act="newEntry" data-type="zeit" data-project="'+esc(id)+'">Zeit buchen</button><button class="btn" data-act="newEntry" data-type="material" data-project="'+esc(id)+'">Material buchen</button></div>';
   h+= list.length? daysHtml(list,false,0) : '<div class="empty"><b>Noch keine Buchungen</b>Zeit und Material für dieses Projekt erscheinen hier.</div>';
   h+='<h2 class="sec"><span>Projekt</span></h2><div class="btns"><button class="btn small" data-act="copySum" data-id="'+esc(id)+'">Zusammenfassung kopieren</button><button class="btn small" data-act="editProject" data-id="'+esc(id)+'">Bearbeiten</button>'+
-     '<button class="btn small" data-act="archive" data-id="'+esc(id)+'">'+(p.archived?'Wieder aktivieren':'Archivieren')+'</button></div>';
+     '<button class="btn small" data-act="archive" data-id="'+esc(id)+'">'+(p.archived?'Wieder öffnen':'Projekt abschließen')+'</button></div>';
   return h;
 }
 
@@ -347,23 +364,15 @@ function viewUebersicht(){
   h+='<h2 class="sec"><span>Nach Projekt</span><span class="sum">'+per.length+'</span></h2>';
   if(!per.length) h+='<div class="empty"><b>Nichts im Zeitraum</b>Sobald du Zeit oder Material bucht, siehst du hier die Verteilung.</div>';
   else h+='<div class="list">'+per.map(function(x){
-    return '<button class="row" data-act="openProject" data-id="'+esc(x.p.id)+'" style="display:block"><span style="display:flex;justify-content:space-between;gap:14px;align-items:baseline"><span class="main"><b>'+esc(x.p.name)+'</b></span>'+
+    return '<button class="row" data-act="openProject" data-id="'+esc(x.p.id)+'" style="display:block"><span style="display:flex;justify-content:space-between;gap:14px;align-items:baseline"><span class="main"><b>'+esc(x.p.name)+'</b>'+(x.p.archived?'<small>Abgeschlossen</small>':'')+'</span>'+
       '<span class="val">'+fmtHM(x.s.min)+' h · '+EUR.format(x.s.mat)+'</span></span><div class="bar"><i style="width:'+Math.round(x.s.min/max*100)+'%"></i></div></button>';
   }).join('')+'</div>';
-  h+='<h2 class="sec"><span>Stundensatz</span></h2><label class="label" for="rate" style="margin-top:0">Euro pro Stunde, netto (optional)</label>'+
-     '<input type="number" id="rate" inputmode="decimal" min="0" step="0.5" value="'+(rate||'')+'" placeholder="z. B. 95">'+
-     '<p class="muted" style="margin:8px 0 0;font-size:14px">Mit Stundensatz zeigt die App den Gesamtwert aus Arbeitszeit und Material.</p>';
-  var lb=''; try{lb=localStorage.getItem('wb-last-backup')||''}catch(e){}
-  h+='<h2 class="sec"><span>Datensicherung</span></h2><p class="muted" style="margin:0 0 10px;font-size:15px">Die Daten liegen nur auf diesem Gerät. Sichere sie regelmäßig als Datei, zum Beispiel in dein Cloud-Laufwerk.</p>'+
-     '<p class="mono" style="margin:0 0 12px;font-size:14px">'+(lb?'Letzte Sicherung: '+esc(lb.slice(8,10)+'.'+lb.slice(5,7)+'.'+lb.slice(0,4)):'Noch nie gesichert')+'</p>'+
-     '<div class="btns"><button class="btn" data-act="exportData">Sicherung speichern</button><button class="btn" data-act="importPick">Sicherung laden</button></div>'+
-     '<input type="file" id="importFile" accept="application/json,.json" hidden>';
   return h;
 }
 
 /* Rendern */
 function render(){
-  $('#today').textContent=new Date().toLocaleDateString('de-DE',{weekday:'long',day:'numeric',month:'long'});
+  $('#today').textContent=new Date().toLocaleDateString('de-DE',{weekday:'short',day:'numeric',month:'short'});
   document.querySelectorAll('.tab').forEach(function(b){b.setAttribute('aria-current',b.dataset.tab===S.tab?'page':'false')});
   var h='';
   if(S.dbError) h+='<div class="notice">Der Gerätespeicher ist nicht verfügbar ('+esc(S.dbError)+'). Starte die App neu. Im privaten Modus des Browsers klappt das Speichern nicht.</div>';
@@ -374,6 +383,7 @@ function render(){
   var a=document.activeElement, id=a&&a.id, pos=a&&a.selectionStart;
   $('#view').innerHTML=h;
   if(id&&(id==='tText'||id==='rate')){var n=document.getElementById(id); if(n){n.focus(); try{n.setSelectionRange(pos,pos)}catch(e){}}}
+  var fab=$('#fab'); if(fab) fab.hidden=!(S.loaded&&((S.tab==='heute'&&(S.timer||activeProjects().length))||(S.tab==='projekte'&&S.open)));
   tick();
 }
 
@@ -392,18 +402,21 @@ function toast(msg){var t=$('#toast');t.textContent=msg;t.hidden=false;clearTime
 function failMsg(e){return 'Speichern fehlgeschlagen'+(e&&e.code?' ('+e.code+')':'')}
 
 async function timerToggle(){
+  if(!S.timer) return;
   try{
-    if(S.timer){
-      var t=S.timer, minutes=Math.max(1,Math.round((Date.now()-t.startedAt)/60000));
-      await store.save('entries',genId(),{projectId:t.projectId,type:'zeit',date:isoDate(new Date(t.startedAt)),minutes:minutes,text:t.text||'',createdAt:Date.now()});
-      await store.setTimer(null); S.tText='';
-      toast(fmtHM(minutes)+' h auf '+projName(t.projectId)+' gebucht');
-    } else {
-      var sel=$('#tProj'); if(!sel||!sel.value) return;
-      S.tProj=sel.value;
-      await store.setTimer({projectId:sel.value,startedAt:Date.now(),text:S.tText.trim()});
-    }
+    var t=S.timer, minutes=Math.max(1,Math.round((Date.now()-t.startedAt)/60000));
+    var txt=String($('#tText')?$('#tText').value:(S.tText||t.text||'')).trim();
+    await store.save('entries',genId(),{projectId:t.projectId,type:'zeit',date:isoDate(new Date(t.startedAt)),minutes:minutes,text:txt,createdAt:Date.now()});
+    await store.setTimer(null); S.tText='';
+    toast(fmtHM(minutes)+' h auf '+projName(t.projectId)+' gebucht');
   }catch(e){toast(failMsg(e))}
+}
+async function startTimer(id){
+  if(S.timer||S.starting||!projOf(id)) return;
+  S.starting=true;
+  try{ S.tProj=id; S.tText=''; await store.setTimer({projectId:id,startedAt:Date.now(),text:''}); }
+  catch(e){toast(failMsg(e))}
+  finally{S.starting=false}
 }
 
 /* Sheet */
@@ -420,6 +433,31 @@ function projectOptions(sel){
   if(cur&&cur.archived) list=list.concat([cur]);
   return list.map(function(p){return '<option value="'+esc(p.id)+'"'+(p.id===sel?' selected':'')+'>'+esc(p.name)+'</option>'}).join('');
 }
+function lastMaterials(){
+  var seen={}, out=[];
+  S.entries.filter(function(e){return e.type==='material'&&e.name}).sort(function(a,b){return (b.createdAt||0)-(a.createdAt||0)}).forEach(function(e){
+    var k=e.name.toLowerCase(); if(!seen[k]){seen[k]=1;out.push(e)}
+  });
+  return out;
+}
+function matChipsHtml(){
+  var l=lastMaterials().slice(0,6); if(!l.length) return '';
+  return '<div class="chips">'+l.map(function(e,i){return '<button type="button" class="chip" data-act="matChip" data-i="'+i+'">'+esc(e.name)+'</button>'}).join('')+'</div>';
+}
+function autofillMaterial(){
+  if(SH.id) return;
+  var name=($('#fName').value||'').trim().toLowerCase(); if(!name) return;
+  var m=lastMaterials().find(function(e){return e.name.toLowerCase()===name}); if(!m) return;
+  var pr=$('#fPrice'), un=$('#fUnit');
+  if(!pr.dataset.touched) pr.value=m.unitPrice?String(m.unitPrice).replace('.',','):'';
+  if(!un.dataset.touched) un.value=m.unit;
+}
+function matChip(t){
+  var m=lastMaterials()[+t.dataset.i]; if(!m) return;
+  var pr=$('#fPrice'), un=$('#fUnit'); delete pr.dataset.touched; delete un.dataset.touched;
+  $('#fName').value=m.name; autofillMaterial();
+  var q=$('#fQty'); q.focus(); q.select();
+}
 function materialNames(){
   var c={}; S.entries.forEach(function(e){if(e.type==='material'&&e.name)c[e.name]=(c[e.name]||0)+1});
   return Object.keys(c).sort(function(a,b){return c[b]-c[a]}).slice(0,40);
@@ -427,8 +465,9 @@ function materialNames(){
 function entrySheet(opts){
   opts=opts||{};
   var ex=opts.id?S.entries.find(function(e){return e.id===opts.id}):null;
-  SH.mode='entry'; SH.id=ex?ex.id:null; SH.type=ex?ex.type:(opts.type||'zeit');
-  var pid=ex?ex.projectId:(opts.projectId||S.tProj||(activeProjects()[0]||{}).id||'');
+  SH.mode='entry'; SH.id=ex?ex.id:null; SH.type=ex?ex.type:(opts.type||S.lastType||'zeit');
+  var pid=ex?ex.projectId:(opts.projectId||'');
+  if(!ex&&!opts.projectId){var tp=projOf(S.tProj); pid=(tp&&!tp.archived)?tp.id:((recentProjects()[0]||{}).id||'')}
   if(!ex&&!activeProjects().length){toast('Lege zuerst ein Projekt an');return}
   var h='';
   if(!ex) h+='<div class="seg" role="group" aria-label="Art der Buchung" style="margin-top:12px"><button data-act="sheetType" data-t="zeit">Zeit</button><button data-act="sheetType" data-t="material">Material</button></div>';
@@ -438,7 +477,7 @@ function entrySheet(opts){
      '<div class="chips">'+['0:15','0:30','1:00','2:00','4:00','8:00'].map(function(c){return '<button type="button" class="chip" data-act="chipDur" data-v="'+c+'">'+c+'</button>'}).join('')+'</div>'+
      '<label class="label" for="fText">Tätigkeit (optional)</label><input type="text" id="fText" autocomplete="off" placeholder="z. B. Bremsleitungen ersetzt" value="'+esc(ex&&ex.type==='zeit'?ex.text:'')+'"></div>';
   h+='<div id="gMat"><label class="label" for="fName">Material</label><input type="text" id="fName" list="matNames" autocomplete="off" placeholder="z. B. Hydrauliköl" value="'+esc(ex&&ex.type==='material'?ex.name:'')+'">'+
-     '<datalist id="matNames">'+materialNames().map(function(n){return '<option value="'+esc(n)+'">'}).join('')+'</datalist>'+
+     '<datalist id="matNames">'+materialNames().map(function(n){return '<option value="'+esc(n)+'">'}).join('')+'</datalist>'+(ex?'':matChipsHtml())+
      '<div class="two"><div><label class="label" for="fQty">Menge</label><input type="text" id="fQty" inputmode="decimal" autocomplete="off" value="'+esc(ex&&ex.type==='material'?String(ex.qty).replace('.',','):'1')+'"></div>'+
      '<div><label class="label" for="fUnit">Einheit</label><select id="fUnit">'+UNITS.map(function(u){return '<option'+(ex&&ex.unit===u?' selected':'')+'>'+u+'</option>'}).join('')+'</select></div></div>'+
      '<label class="label" for="fPrice">Einzelpreis in Euro (optional)</label><input type="text" id="fPrice" inputmode="decimal" autocomplete="off" placeholder="0,00" value="'+esc(ex&&ex.type==='material'&&ex.unitPrice?String(ex.unitPrice).replace('.',','):'')+'"></div>';
@@ -472,7 +511,7 @@ async function saveEntry(){
   }
   try{
     await store.save('entries',SH.id||genId(),data);
-    S.tProj=pid; closeSheet(); toast('Gespeichert');
+    S.tProj=pid; S.lastType=SH.type; try{localStorage.setItem('wb-last-type',SH.type)}catch(e){} closeSheet(); toast('Gespeichert');
   }catch(e){err.textContent=failMsg(e)}
 }
 
@@ -544,13 +583,29 @@ async function copySum(id){
   var ta=$('#copyBox'); ta.focus(); ta.select();
 }
 
+function backupText(){
+  var lb=''; try{lb=localStorage.getItem('wb-last-backup')||''}catch(e){}
+  return lb?'Letzte Sicherung: '+lb.slice(8,10)+'.'+lb.slice(5,7)+'.'+lb.slice(0,4):'Noch nie gesichert';
+}
+function settingsSheet(){
+  var rate=+S.settings.rate||0;
+  var h='<label class="label" for="rate">Stundensatz in Euro, netto (optional)</label><input type="number" id="rate" inputmode="decimal" min="0" step="0.5" value="'+(rate||'')+'" placeholder="z. B. 95">'+
+    '<p class="muted" style="margin:8px 0 0;font-size:14px">Mit Stundensatz zeigt die App zusätzlich den Gesamtwert aus Arbeitszeit und Material.</p>'+
+    '<h2 class="sec" style="margin-top:26px"><span>Datensicherung</span></h2>'+
+    '<p class="muted" style="margin:0 0 8px;font-size:15px">Die Daten liegen nur auf diesem Gerät. Sichere sie regelmäßig als Datei, zum Beispiel in dein Cloud-Laufwerk.</p>'+
+    '<p class="mono" id="lastBackup" style="margin:0 0 12px;font-size:14px">'+esc(backupText())+'</p>'+
+    '<div class="btns"><button class="btn" data-act="exportData">Sicherung speichern</button><button class="btn" data-act="importPick">Sicherung laden</button></div>'+
+    '<input type="file" id="importFile" accept="application/json,.json" hidden>'+
+    '<div class="btns" style="margin-top:18px"><button class="btn primary" data-act="close">Fertig</button></div>';
+  openSheet('Einstellungen',h);
+}
 function exportData(){
   var data={app:'werkstatt-buch',version:1,exportedAt:new Date().toISOString(),projects:S.projects,entries:S.entries,settings:S.settings};
   var blob=new Blob([JSON.stringify(data,null,1)],{type:'application/json'});
   var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='werkstatt-buch-'+todayISO()+'.json';
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){URL.revokeObjectURL(a.href)},3000);
   try{localStorage.setItem('wb-last-backup',todayISO())}catch(e){}
-  toast('Sicherung wird gespeichert'); render();
+  toast('Sicherung wird gespeichert'); var lbEl=$('#lastBackup'); if(lbEl) lbEl.textContent=backupText(); render();
 }
 async function importData(file){
   try{
@@ -584,18 +639,29 @@ var A={
   period:function(t){S.period=t.dataset.p;render()},
   archive:async function(t){
     var p=projOf(t.dataset.id); if(!p) return;
-    try{var d=Object.assign({},p);delete d.id;d.archived=!p.archived;await store.save('projects',p.id,d);toast(d.archived?'Archiviert':'Wieder aktiv')}catch(e){toast(failMsg(e))}
+    try{var d=Object.assign({},p);delete d.id;d.archived=!p.archived;await store.save('projects',p.id,d);toast(d.archived?'Projekt abgeschlossen':'Projekt wieder geöffnet')}catch(e){toast(failMsg(e))}
   },
   copySum:function(t){copySum(t.dataset.id)},
   delExamples:removeExamples,
+  fab:function(){var pid=(S.tab==='projekte'&&S.open)?S.open:undefined; entrySheet({projectId:pid})},
+  startTimer:function(t){startTimer(t.dataset.id)},
+  showAll:function(){S.showAll=true;render()},
+  settings:function(){settingsSheet()},
+  matChip:matChip,
   close:closeSheet
 };
 document.addEventListener('click',function(e){
   var t=e.target.closest('[data-act]'); if(!t) return;
   var f=A[t.dataset.act]; if(f) f(t,e);
 });
-document.addEventListener('input',function(e){if(e.target.id==='tText')S.tText=e.target.value});
+document.addEventListener('input',function(e){
+  var id=e.target.id;
+  if(id==='tText') S.tText=e.target.value;
+  if(id==='fPrice') e.target.dataset.touched='1';
+  if(id==='fName') autofillMaterial();
+});
 document.addEventListener('change',function(e){
+  if(e.target.id==='fUnit') e.target.dataset.touched='1';
   if(e.target.id==='importFile'&&e.target.files[0]){importData(e.target.files[0]);e.target.value='';return}
   if(e.target.id==='tProj') S.tProj=e.target.value;
   if(e.target.id==='rate'){
@@ -617,6 +683,7 @@ function loadAll(){
     S.loaded=true; syncTick(); render();
   });
 }
+try{S.lastType=localStorage.getItem('wb-last-type')==='material'?'material':'zeit'}catch(e){}
 render();
 idbOpen().then(function(d){DB=d;S.hasDb=true;return loadAll()}).catch(function(e){S.dbError=(e&&e.name)||'unbekannt';S.loaded=true;render()});
 try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(); }catch(e){}
