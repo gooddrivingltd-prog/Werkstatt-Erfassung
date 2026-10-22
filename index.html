@@ -151,6 +151,9 @@ textarea.copy{min-height:200px; font:14px var(--mono)}
 .row .go{color:var(--accent); font:600 14px var(--display); letter-spacing:.12em; text-transform:uppercase}
 .chip{max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 body{padding-block:0 170px}
+.stat small{display:block; font:500 13px var(--mono); color:var(--ink2); margin-top:2px}
+h2.sec .sum{text-align:right}
+h2.sec .sum small{display:block; font:500 12px var(--mono); margin-top:1px}
 #toast{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
 </style>
 </head>
@@ -251,6 +254,9 @@ function sums(list){
   list.forEach(function(e){ if(e.type==='zeit') min+=e.minutes||0; else mat+=(e.qty||0)*(e.unitPrice||0); });
   return {min:min,mat:mat};
 }
+function laborEUR(min){var r=+S.settings.rate||0; return r?min/60*r:0}
+function laborSmall(min){return (+S.settings.rate&&min)?'<small>'+EUR.format(laborEUR(min))+'</small>':''}
+function valHtml(s){return fmtHM(s.min)+' h'+laborSmall(s.min)+(s.mat?'<small>Material '+EUR.format(s.mat)+'</small>':'')}
 function projOf(id){return S.projects.find(function(p){return p.id===id})}
 function projName(id){var p=projOf(id);return p?p.name:'Gelöschtes Projekt'}
 function activeProjects(){return S.projects.filter(function(p){return !p.archived}).sort(function(a,b){return a.name.localeCompare(b.name,'de')})}
@@ -273,7 +279,7 @@ function hasExamples(){return S.projects.some(function(p){return p.example})||S.
 function entryRow(e,showProj){
   var isT=e.type==='zeit';
   var title=isT?esc(e.text||'Arbeitszeit'):esc(NUM.format(e.qty||0)+' '+(e.unit||'')+' '+(e.name||''));
-  var val=isT?fmtHM(e.minutes)+' h':(e.unitPrice?EUR.format((e.qty||0)*e.unitPrice):'–');
+  var val=isT?fmtHM(e.minutes)+' h'+laborSmall(e.minutes):(e.unitPrice?EUR.format((e.qty||0)*e.unitPrice):'–');
   var sub=(showProj?esc(projName(e.projectId))+' · ':'')+(isT?'Zeit':'Material');
   return '<button class="row" data-act="editEntry" data-id="'+esc(e.id)+'"><span class="main"><b>'+title+'</b><small>'+sub+'</small></span><span class="val">'+val+'</span></button>';
 }
@@ -281,7 +287,8 @@ function daysHtml(list,showProj,limit){
   var g=groupByDate(list); if(limit) g=g.slice(0,limit);
   return g.map(function(d){
     var s=sums(d[1]);
-    var sum=(s.min?fmtHM(s.min)+' h':'')+(s.min&&s.mat?' · ':'')+(s.mat?EUR.format(s.mat):'');
+    var parts=[]; if(s.min&&+S.settings.rate) parts.push(EUR.format(laborEUR(s.min))); if(s.min&&s.mat) parts.push('Material '+EUR.format(s.mat));
+    var sum=(s.min?fmtHM(s.min)+' h':'Material '+EUR.format(s.mat))+(parts.length?'<small>'+parts.join(' · ')+'</small>':'');
     return '<h2 class="sec"><span>'+esc(dayLabel(d[0]))+'</span><span class="sum">'+sum+'</span></h2><div class="list">'+
       d[1].map(function(e){return entryRow(e,showProj)}).join('')+'</div>';
   }).join('');
@@ -326,7 +333,7 @@ function viewProjekte(){
     return '<div class="list">'+ps.map(function(p){
       var s=sums(S.entries.filter(function(e){return e.projectId===p.id}));
       return '<button class="row" data-act="openProject" data-id="'+esc(p.id)+'"><span class="main"><b>'+esc(p.name)+'</b><small>'+kindTag(p)+esc(p.customer||'')+'</small></span>'+
-        '<span class="val">'+fmtHM(s.min)+' h<small>'+EUR.format(s.mat)+'</small></span></button>';
+        '<span class="val">'+valHtml(s)+'</span></button>';
     }).join('')+'</div>';
   }
   if(!act.length) h+='<div class="empty"><b>Keine aktiven Projekte</b>Ein Projekt ist ein Fahrzeug, ein Kunde oder eine interne Arbeit wie Formelauto oder Werkstatt allgemein.</div>';
@@ -342,7 +349,7 @@ function viewProject(id){
   h+='<h2 style="font:700 30px/1.05 var(--display);letter-spacing:.03em;text-transform:uppercase;margin:6px 0 4px;overflow-wrap:anywhere">'+esc(p.name)+'</h2>';
   h+='<div class="muted">'+kindTag(p)+esc(p.customer||'')+(p.archived?' · abgeschlossen':'')+'</div>'+(p.note?'<p style="margin:8px 0 0;overflow-wrap:anywhere">'+esc(p.note)+'</p>':'');
   var rate=+S.settings.rate||0;
-  h+='<div class="stats"><div class="stat"><span>Arbeitszeit</span><strong>'+fmtHM(s.min)+' h</strong></div><div class="stat"><span>Material</span><strong>'+EUR.format(s.mat)+'</strong></div>'+
+  h+='<div class="stats"><div class="stat"><span>Arbeitszeit</span><strong>'+fmtHM(s.min)+' h</strong>'+laborSmall(s.min)+'</div><div class="stat"><span>Material</span><strong>'+EUR.format(s.mat)+'</strong></div>'+
      (rate?'<div class="stat"><span>Gesamt</span><strong>'+EUR.format(s.min/60*rate+s.mat)+'</strong></div>':'')+'</div>';
   h+= list.length? daysHtml(list,false,0) : '<div class="empty"><b>Noch keine Buchungen</b>Zeit und Material für dieses Projekt erscheinen hier.</div>';
   h+='<h2 class="sec"><span>Projekt</span></h2><div class="btns"><button class="btn small" data-act="copySum" data-id="'+esc(id)+'">Zusammenfassung kopieren</button><button class="btn small" data-act="editProject" data-id="'+esc(id)+'">Bearbeiten</button>'+
@@ -359,13 +366,14 @@ function viewUebersicht(){
   var h='<div class="seg" style="margin-top:18px" role="group" aria-label="Zeitraum">'+
     [['heute','Heute'],['woche','Woche'],['monat','Monat'],['gesamt','Gesamt']].map(function(x){
       return '<button data-act="period" data-p="'+x[0]+'" aria-pressed="'+(S.period===x[0])+'">'+x[1]+'</button>'}).join('')+'</div>';
-  h+='<div class="stats"><div class="stat"><span>Arbeitszeit</span><strong>'+fmtHM(tot.min)+' h</strong></div><div class="stat"><span>Material</span><strong>'+EUR.format(tot.mat)+'</strong></div>'+
+  h+='<div class="stats"><div class="stat"><span>Arbeitszeit</span><strong>'+fmtHM(tot.min)+' h</strong>'+laborSmall(tot.min)+'</div><div class="stat"><span>Material</span><strong>'+EUR.format(tot.mat)+'</strong></div>'+
      (rate?'<div class="stat"><span>Gesamt</span><strong>'+EUR.format(tot.min/60*rate+tot.mat)+'</strong></div>':'')+'</div>';
+  if(!rate) h+='<p class="muted" style="margin:10px 4px 0;font-size:14px">Trage oben rechts unter Einstellungen einen Stundensatz ein, dann siehst du hier auch den Wert der Arbeitszeit.</p>';
   h+='<h2 class="sec"><span>Nach Projekt</span><span class="sum">'+per.length+'</span></h2>';
   if(!per.length) h+='<div class="empty"><b>Nichts im Zeitraum</b>Sobald du Zeit oder Material bucht, siehst du hier die Verteilung.</div>';
   else h+='<div class="list">'+per.map(function(x){
     return '<button class="row" data-act="openProject" data-id="'+esc(x.p.id)+'" style="display:block"><span style="display:flex;justify-content:space-between;gap:14px;align-items:baseline"><span class="main"><b>'+esc(x.p.name)+'</b>'+(x.p.archived?'<small>Abgeschlossen</small>':'')+'</span>'+
-      '<span class="val">'+fmtHM(x.s.min)+' h · '+EUR.format(x.s.mat)+'</span></span><div class="bar"><i style="width:'+Math.round(x.s.min/max*100)+'%"></i></div></button>';
+      '<span class="val">'+valHtml(x.s)+'</span></span><div class="bar"><i style="width:'+Math.round(x.s.min/max*100)+'%"></i></div></button>';
   }).join('')+'</div>';
   return h;
 }
@@ -574,6 +582,7 @@ function summaryText(id){
   var d=function(iso){return iso.slice(8,10)+'.'+iso.slice(5,7)+'.'};
   var t=p.name+(p.customer?' ('+p.customer+')':'')+'\n';
   t+='Arbeitszeit: '+fmtHM(s.min)+' h ('+NUM.format(s.min/60)+' h)\nMaterial: '+EUR.format(s.mat)+'\n';
+  if(+S.settings.rate) t+='Arbeit bei '+EUR.format(+S.settings.rate)+'/h: '+EUR.format(laborEUR(s.min))+'\n';
   if(+S.settings.rate) t+='Gesamt bei '+EUR.format(+S.settings.rate)+'/h: '+EUR.format(s.min/60*(+S.settings.rate)+s.mat)+'\n';
   if(z.length) t+='\nZeiten\n'+z.map(function(e){return d(e.date)+'  '+fmtHM(e.minutes)+' h  '+(e.text||'Arbeitszeit')}).join('\n')+'\n';
   if(m.length) t+='\nMaterial\n'+m.map(function(e){return d(e.date)+'  '+NUM.format(e.qty)+' '+e.unit+' '+e.name+(e.unitPrice?'  '+EUR.format(e.qty*e.unitPrice):'')}).join('\n')+'\n';

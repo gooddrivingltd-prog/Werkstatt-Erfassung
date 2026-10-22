@@ -1,6 +1,6 @@
 /* Offline-Hülle: App-Dateien werden beim ersten Besuch gespeichert und danach ohne Netz geladen.
    Bei einer neuen Version der App die Zahl in VERSION erhöhen. */
-const VERSION = 'wb-v4';
+const VERSION = 'wb-v5';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'];
 
 self.addEventListener('install', (e) => {
