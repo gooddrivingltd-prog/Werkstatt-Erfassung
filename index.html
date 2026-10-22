@@ -202,7 +202,7 @@ function parseDuration(s){
 }
 function parseNum(s){var v=parseFloat(String(s||'').trim().replace(',','.'));return isFinite(v)?v:null}
 
-var S={tab:'heute',open:null,period:'woche',projects:[],entries:[],timer:null,settings:{},tProj:'',tText:'',lastType:'zeit',showAll:false,
+var S={tab:'heute',open:null,period:'woche',projects:[],entries:[],timer:null,settings:{},tProj:'',tText:'',lastType:'zeit',
   loaded:false,hasDb:false,dbError:null};
 var L={projects:false,entries:false};
 
@@ -307,14 +307,14 @@ function viewHeute(){
        '<label class="label" for="tText">Tätigkeit (optional)</label><input type="text" id="tText" value="'+esc(S.tText||running.text||'')+'" placeholder="z. B. Kabelbaum verlegen">'+
        '<div class="clock" id="clock">0:00:00</div><button class="btn dark block" data-act="timerToggle">Stopp und buchen</button></section>';
   } else {
-    var shown=S.showAll?rp:rp.slice(0,6);
-    h+='<h2 class="sec"><span>Stoppuhr starten</span></h2><div class="list">'+shown.map(function(p){
-      return '<button class="row" data-act="startTimer" data-id="'+esc(p.id)+'"><span class="main"><b>'+esc(p.name)+'</b><small>'+kindTag(p)+esc(p.customer||'')+'</small></span><span class="val go">Start</span></button>';
-    }).join('')+'</div>';
-    if(rp.length>6&&!S.showAll) h+='<button class="btn small block" style="margin-top:10px" data-act="showAll">Alle '+rp.length+' Projekte zeigen</button>';
+    var cur=projOf(S.tProj), proj=(cur&&!cur.archived)?cur.id:rp[0].id;
+    h+='<section class="timer" aria-label="Stoppuhr"><label class="label" for="tProj">Projekt</label><select id="tProj">'+
+       activeProjects().map(function(p){return '<option value="'+esc(p.id)+'"'+(p.id===proj?' selected':'')+'>'+esc(p.name)+'</option>'}).join('')+'</select>'+
+       '<label class="label" for="tText">Tätigkeit (optional)</label><input type="text" id="tText" value="'+esc(S.tText)+'" placeholder="z. B. Kabelbaum verlegen">'+
+       '<div class="clock" id="clock">0:00:00</div><button class="btn primary block" data-act="timerToggle">Start</button></section>';
   }
   if(!S.entries.length){
-    h+='<div class="empty"><b>Noch keine Buchungen</b>Tippe auf ein Projekt, um die Stoppuhr zu starten, oder unten rechts auf das Plus für Zeit und Material.</div>';
+    h+='<div class="empty"><b>Noch keine Buchungen</b>Starte die Stoppuhr oder tippe unten rechts auf das Plus für Zeit und Material.</div>';
   } else h+=daysHtml(S.entries,true,7);
   return h;
 }
@@ -402,7 +402,10 @@ function toast(msg){var t=$('#toast');t.textContent=msg;t.hidden=false;clearTime
 function failMsg(e){return 'Speichern fehlgeschlagen'+(e&&e.code?' ('+e.code+')':'')}
 
 async function timerToggle(){
-  if(!S.timer) return;
+  if(!S.timer){
+    var sel=$('#tProj'); if(sel&&sel.value) await startTimer(sel.value,S.tText.trim());
+    return;
+  }
   try{
     var t=S.timer, minutes=Math.max(1,Math.round((Date.now()-t.startedAt)/60000));
     var txt=String($('#tText')?$('#tText').value:(S.tText||t.text||'')).trim();
@@ -411,10 +414,10 @@ async function timerToggle(){
     toast(fmtHM(minutes)+' h auf '+projName(t.projectId)+' gebucht');
   }catch(e){toast(failMsg(e))}
 }
-async function startTimer(id){
+async function startTimer(id,text){
   if(S.timer||S.starting||!projOf(id)) return;
   S.starting=true;
-  try{ S.tProj=id; S.tText=''; await store.setTimer({projectId:id,startedAt:Date.now(),text:''}); }
+  try{ S.tProj=id; S.tText=text||''; await store.setTimer({projectId:id,startedAt:Date.now(),text:text||''}); }
   catch(e){toast(failMsg(e))}
   finally{S.starting=false}
 }
@@ -644,8 +647,6 @@ var A={
   copySum:function(t){copySum(t.dataset.id)},
   delExamples:removeExamples,
   fab:function(){var pid=(S.tab==='projekte'&&S.open)?S.open:undefined; entrySheet({projectId:pid})},
-  startTimer:function(t){startTimer(t.dataset.id)},
-  showAll:function(){S.showAll=true;render()},
   settings:function(){settingsSheet()},
   matChip:matChip,
   close:closeSheet
