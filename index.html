@@ -434,13 +434,62 @@ async function startTimer(id,text){
   finally{S.starting=false}
 }
 
+/* Zurück-Wischen: Ansichten und Fenster liegen im Verlauf des Geräts.
+   Zustand pro Eintrag: d = Tiefe (0 = Startseite), tab, open = geöffnetes Projekt, sheet = Fenster offen. */
+var sheetPushed=false, closingSheet=false;
+function curState(){var st=null; try{st=history.state}catch(e){} return (st&&st.wb)?st:{wb:1,d:0,tab:'heute',open:null}}
+function viewState(d,extra){return Object.assign({wb:1,d:d,tab:S.tab,open:S.open},extra||{})}
+function pushView(d){try{history.pushState(viewState(d),'')}catch(e){}}
+function replaceView(d){try{history.replaceState(viewState(d),'')}catch(e){}}
+function navTab(tab){
+  var d=curState().d;
+  if(tab==='heute'){
+    S.tab='heute'; S.open=null; render();
+    if(d>0){try{history.go(-d)}catch(e){}}
+  } else if(S.tab===tab&&S.open&&d>0){
+    try{history.back()}catch(e){S.open=null;render()}
+  } else if(d===0){
+    S.tab=tab; S.open=null; pushView(1); render();
+  } else {
+    S.tab=tab; S.open=null; replaceView(d); render();
+  }
+}
+function navOpenProject(id){
+  var d=curState().d; S.tab='projekte'; S.open=id; pushView(d+1); render();
+}
+function navBack(){
+  if(curState().d>0){try{history.back();return}catch(e){}}
+  S.open=null; render();
+}
+window.addEventListener('popstate',function(e){
+  var st=e.state;
+  if(sheetPushed&&!(st&&st.sheet)){
+    sheetPushed=false; closingSheet=false; hideSheet();
+    if(S.afterDelete){
+      S.afterDelete=false;
+      var cs=curState(); if(cs.d>0&&cs.open){try{history.back()}catch(x){}}
+    }
+    return;
+  }
+  if(st&&st.wb){S.tab=st.tab||'heute'; S.open=st.open||null} else {S.tab='heute'; S.open=null}
+  hideSheet(); render(); window.scrollTo(0,0);
+});
+
 /* Sheet */
 var SH={type:'zeit',mode:'entry',id:null,armed:false};
 function openSheet(title,html){
   $('#sheetTitle').textContent=title; $('#sheetBody').innerHTML=html;
   $('#sheet').hidden=false; document.body.classList.add('lock'); $('.panel').scrollTop=0; SH.armed=false;
+  if(!sheetPushed){
+    sheetPushed=true; closingSheet=false;
+    try{history.pushState(viewState(curState().d,{sheet:1}),'')}catch(e){sheetPushed=false}
+  }
 }
-function closeSheet(){$('#sheet').hidden=true; document.body.classList.remove('lock')}
+function hideSheet(){$('#sheet').hidden=true; document.body.classList.remove('lock')}
+function closeSheet(){
+  hideSheet();
+  if(sheetPushed&&!closingSheet){closingSheet=true; try{history.back()}catch(e){sheetPushed=false;closingSheet=false}}
+}
 
 var UNITS=['Stk','l','m','kg','Satz','Dose','Rolle'];
 function projectOptions(sel){
@@ -563,7 +612,7 @@ async function removeProject(){
     for(var e of S.entries.filter(function(x){return x.projectId===id})) await store.remove('entries',e.id);
     await store.remove('projects',id);
     if(S.timer&&S.timer.projectId===id) await store.setTimer(null);
-    S.open=null; closeSheet(); render(); toast('Projekt gelöscht');
+    S.afterDelete=true; closeSheet(); render(); toast('Projekt gelöscht');
   }catch(e){toast(failMsg(e))}
 }
 async function removeEntry(){
@@ -639,7 +688,7 @@ async function importData(file){
 var A={
   exportData:exportData,
   importPick:function(){var f=$('#importFile'); if(f) f.click()},
-  tab:function(t){S.tab=t.dataset.tab;S.open=null;render();window.scrollTo(0,0)},
+  tab:function(t){navTab(t.dataset.tab);window.scrollTo(0,0)},
   timerToggle:timerToggle,
   newEntry:function(t){entrySheet({type:t.dataset.type,projectId:t.dataset.project})},
   editEntry:function(t){entrySheet({id:t.dataset.id})},
@@ -650,8 +699,8 @@ var A={
   newProject:function(){projectSheet()},
   editProject:function(t){projectSheet(t.dataset.id)},
   saveProject:saveProject, delProject:removeProject,
-  openProject:function(t){S.tab='projekte';S.open=t.dataset.id;render();window.scrollTo(0,0)},
-  back:function(){S.open=null;render()},
+  openProject:function(t){navOpenProject(t.dataset.id);window.scrollTo(0,0)},
+  back:navBack,
   period:function(t){S.period=t.dataset.p;render()},
   archive:async function(t){
     var p=projOf(t.dataset.id); if(!p) return;
@@ -698,6 +747,11 @@ function loadAll(){
   });
 }
 try{S.lastType=localStorage.getItem('wb-last-type')==='material'?'material':'zeit'}catch(e){}
+try{
+  var st0=history.state;
+  if(st0&&st0.wb){ S.tab=st0.tab||'heute'; S.open=st0.open||null; if(st0.sheet) setTimeout(function(){try{history.back()}catch(e){}},0); }
+  else history.replaceState({wb:1,d:0,tab:'heute',open:null},'');
+}catch(e){}
 render();
 idbOpen().then(function(d){DB=d;S.hasDb=true;return loadAll()}).catch(function(e){S.dbError=(e&&e.name)||'unbekannt';S.loaded=true;render()});
 try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(); }catch(e){}
