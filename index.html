@@ -91,6 +91,8 @@ input:disabled,select:disabled{opacity:.7}
 .timer{background:var(--surface); border:1.5px solid var(--ink); border-radius:8px; padding:16px; margin-top:18px}
 .timer .clock{font:600 52px/1 var(--mono); letter-spacing:-.02em; margin:14px 0 14px; font-variant-numeric:tabular-nums}
 .timer.running .clock{color:var(--accent)}
+.timer.paused .clock{color:var(--ink2)}
+.timer .paused-note{font:600 13px var(--display); letter-spacing:.12em; text-transform:uppercase; color:var(--accent); margin-top:2px}
 .timer .who{font-weight:600}
 
 /* Zeilen */
@@ -261,6 +263,7 @@ function valHtml(s){
   var m=s.mat?(t?'<small>Material '+EUR.format(s.mat)+'</small>':'Material '+EUR.format(s.mat)):'';
   return t+m;
 }
+function nettoNote(){return '<p class="muted" style="margin:8px 4px 0;font-size:13px">Alle Beträge netto, ohne Umsatzsteuer.</p>'}
 function projOf(id){return S.projects.find(function(p){return p.id===id})}
 function projName(id){var p=projOf(id);return p?p.name:'Gelöschtes Projekt'}
 function activeProjects(){return S.projects.filter(function(p){return !p.archived}).sort(function(a,b){return a.name.localeCompare(b.name,'de')})}
@@ -314,9 +317,12 @@ function viewHeute(){
     return h;
   }
   if(running){
-    h+='<section class="timer running" aria-label="Stoppuhr"><div class="who">'+esc(projName(running.projectId))+'</div>'+
+    var paused=!!running.pausedAt;
+    h+='<section class="timer running'+(paused?' paused':'')+'" aria-label="Stoppuhr"><div class="who">'+esc(projName(running.projectId))+'</div>'+(paused?'<div class="paused-note">Pausiert</div>':'')+
        '<label class="label" for="tText">Tätigkeit (optional)</label><input type="text" id="tText" value="'+esc(S.tText||running.text||'')+'" placeholder="z. B. Kabelbaum verlegen">'+
-       '<div class="clock" id="clock">0:00:00</div><button class="btn dark block" data-act="timerToggle">Stopp und buchen</button></section>';
+       '<div class="clock" id="clock">0:00:00</div><div class="btns">'+
+       (paused?'<button class="btn primary" data-act="timerResume">Weiter</button>':'<button class="btn" data-act="timerPause">Pause</button>')+
+       '<button class="btn dark" data-act="timerToggle">Stopp und buchen</button></div></section>';
   } else {
     var cur=projOf(S.tProj), proj=(cur&&!cur.archived)?cur.id:rp[0].id;
     h+='<section class="timer" aria-label="Stoppuhr"><label class="label" for="tProj">Projekt</label><select id="tProj">'+
@@ -353,8 +359,8 @@ function viewProject(id){
   h+='<h2 style="font:700 30px/1.05 var(--display);letter-spacing:.03em;text-transform:uppercase;margin:6px 0 4px;overflow-wrap:anywhere">'+esc(p.name)+'</h2>';
   h+='<div class="muted">'+kindTag(p)+esc(p.customer||'')+(p.archived?' · abgeschlossen':'')+'</div>'+(p.note?'<p style="margin:8px 0 0;overflow-wrap:anywhere">'+esc(p.note)+'</p>':'');
   var rate=+S.settings.rate||0;
-  h+='<div class="stats"><div class="stat"><span>Arbeitszeit</span><strong>'+fmtHM(s.min)+' h</strong>'+laborSmall(s.min)+'</div><div class="stat"><span>Material</span><strong>'+EUR.format(s.mat)+'</strong></div>'+
-     (rate?'<div class="stat"><span>Gesamt</span><strong>'+EUR.format(s.min/60*rate+s.mat)+'</strong></div>':'')+'</div>';
+  h+='<div class="stats"><div class="stat"><span>Arbeitszeit</span><strong>'+fmtHM(s.min)+' h</strong>'+laborSmall(s.min)+'</div><div class="stat"><span>Material netto</span><strong>'+EUR.format(s.mat)+'</strong></div>'+
+     (rate?'<div class="stat"><span>Gesamt netto</span><strong>'+EUR.format(s.min/60*rate+s.mat)+'</strong></div>':'')+'</div>'+nettoNote();
   h+= list.length? daysHtml(list,false,0) : '<div class="empty"><b>Noch keine Buchungen</b>Zeit und Material für dieses Projekt erscheinen hier.</div>';
   h+='<h2 class="sec"><span>Projekt</span></h2><div class="btns"><button class="btn small" data-act="copySum" data-id="'+esc(id)+'">Zusammenfassung kopieren</button><button class="btn small" data-act="editProject" data-id="'+esc(id)+'">Bearbeiten</button>'+
      '<button class="btn small" data-act="archive" data-id="'+esc(id)+'">'+(p.archived?'Wieder öffnen':'Projekt abschließen')+'</button></div>';
@@ -370,8 +376,8 @@ function viewUebersicht(){
   var h='<div class="seg" style="margin-top:18px" role="group" aria-label="Zeitraum">'+
     [['heute','Heute'],['woche','Woche'],['monat','Monat'],['gesamt','Gesamt']].map(function(x){
       return '<button data-act="period" data-p="'+x[0]+'" aria-pressed="'+(S.period===x[0])+'">'+x[1]+'</button>'}).join('')+'</div>';
-  h+='<div class="stats"><div class="stat"><span>Arbeitszeit</span><strong>'+fmtHM(tot.min)+' h</strong>'+laborSmall(tot.min)+'</div><div class="stat"><span>Material</span><strong>'+EUR.format(tot.mat)+'</strong></div>'+
-     (rate?'<div class="stat"><span>Gesamt</span><strong>'+EUR.format(tot.min/60*rate+tot.mat)+'</strong></div>':'')+'</div>';
+  h+='<div class="stats"><div class="stat"><span>Arbeitszeit</span><strong>'+fmtHM(tot.min)+' h</strong>'+laborSmall(tot.min)+'</div><div class="stat"><span>Material netto</span><strong>'+EUR.format(tot.mat)+'</strong></div>'+
+     (rate?'<div class="stat"><span>Gesamt netto</span><strong>'+EUR.format(tot.min/60*rate+tot.mat)+'</strong></div>':'')+'</div>'+nettoNote();
   if(!rate) h+='<p class="muted" style="margin:10px 4px 0;font-size:14px">Trage oben rechts unter Einstellungen einen Stundensatz ein, dann siehst du hier auch den Wert der Arbeitszeit.</p>';
   h+='<h2 class="sec"><span>Nach Projekt</span><span class="sum">'+per.length+'</span></h2>';
   if(!per.length) h+='<div class="empty"><b>Nichts im Zeitraum</b>Sobald du Zeit oder Material bucht, siehst du hier die Verteilung.</div>';
@@ -401,10 +407,11 @@ function render(){
 
 /* Stoppuhr */
 var tickId=null;
+function timerElapsedMs(t){return Math.max(0,(t.pausedAt||Date.now())-t.startedAt-(t.pausedMs||0))}
 function tick(){
   var el=document.getElementById('clock'); if(!el) return;
   if(!S.timer){el.textContent='0:00:00';return}
-  var s=Math.max(0,Math.floor((Date.now()-S.timer.startedAt)/1000));
+  var s=Math.max(0,Math.floor(timerElapsedMs(S.timer)/1000));
   el.textContent=Math.floor(s/3600)+':'+pad(Math.floor(s%3600/60))+':'+pad(s%60);
 }
 function syncTick(){clearInterval(tickId); if(S.timer) tickId=setInterval(tick,1000)}
@@ -419,12 +426,20 @@ async function timerToggle(){
     return;
   }
   try{
-    var t=S.timer, minutes=Math.max(1,Math.round((Date.now()-t.startedAt)/60000));
+    var t=S.timer, minutes=Math.max(1,Math.round(timerElapsedMs(t)/60000));
     var txt=String($('#tText')?$('#tText').value:(S.tText||t.text||'')).trim();
     await store.save('entries',genId(),{projectId:t.projectId,type:'zeit',date:isoDate(new Date(t.startedAt)),minutes:minutes,text:txt,createdAt:Date.now()});
     await store.setTimer(null); S.tText='';
     toast(fmtHM(minutes)+' h auf '+projName(t.projectId)+' gebucht');
   }catch(e){toast(failMsg(e))}
+}
+async function timerPause(){
+  if(!S.timer||S.timer.pausedAt) return;
+  try{ await store.setTimer(Object.assign({},S.timer,{pausedAt:Date.now()})); }catch(e){toast(failMsg(e))}
+}
+async function timerResume(){
+  var t=S.timer; if(!t||!t.pausedAt) return;
+  try{ await store.setTimer(Object.assign({},t,{pausedAt:null,pausedMs:(t.pausedMs||0)+(Date.now()-t.pausedAt)})); }catch(e){toast(failMsg(e))}
 }
 async function startTimer(id,text){
   if(S.timer||S.starting||!projOf(id)) return;
@@ -544,7 +559,7 @@ function entrySheet(opts){
      '<datalist id="matNames">'+materialNames().map(function(n){return '<option value="'+esc(n)+'">'}).join('')+'</datalist>'+(ex?'':matChipsHtml())+
      '<div class="two"><div><label class="label" for="fQty">Menge</label><input type="text" id="fQty" inputmode="decimal" autocomplete="off" value="'+esc(ex&&ex.type==='material'?String(ex.qty).replace('.',','):'1')+'"></div>'+
      '<div><label class="label" for="fUnit">Einheit</label><select id="fUnit">'+UNITS.map(function(u){return '<option'+(ex&&ex.unit===u?' selected':'')+'>'+u+'</option>'}).join('')+'</select></div></div>'+
-     '<label class="label" for="fPrice">Einzelpreis in Euro (optional)</label><input type="text" id="fPrice" inputmode="decimal" autocomplete="off" placeholder="0,00" value="'+esc(ex&&ex.type==='material'&&ex.unitPrice?String(ex.unitPrice).replace('.',','):'')+'"></div>';
+     '<label class="label" for="fPrice">Einzelpreis netto in Euro (optional)</label><input type="text" id="fPrice" inputmode="decimal" autocomplete="off" placeholder="0,00" value="'+esc(ex&&ex.type==='material'&&ex.unitPrice?String(ex.unitPrice).replace('.',','):'')+'"></div>';
   h+='<div class="err" id="fErr" role="alert"></div><div class="btns"><button class="btn primary" data-act="saveEntry">Speichern</button>'+(ex?'<button class="btn danger" data-act="delEntry">Löschen</button>':'')+'</div>';
   openSheet(ex?(ex.type==='zeit'?'Zeit bearbeiten':'Material bearbeiten'):'Buchung',h);
   applySheetType();
@@ -634,9 +649,9 @@ function summaryText(id){
   var m=list.filter(function(e){return e.type==='material'}).sort(function(a,b){return a.date.localeCompare(b.date)});
   var d=function(iso){return iso.slice(8,10)+'.'+iso.slice(5,7)+'.'};
   var t=p.name+(p.customer?' ('+p.customer+')':'')+'\n';
-  t+='Arbeitszeit: '+fmtHM(s.min)+' h ('+NUM.format(s.min/60)+' h)\nMaterial: '+EUR.format(s.mat)+'\n';
-  if(+S.settings.rate) t+='Arbeit bei '+EUR.format(+S.settings.rate)+'/h: '+EUR.format(laborEUR(s.min))+'\n';
-  if(+S.settings.rate) t+='Gesamt bei '+EUR.format(+S.settings.rate)+'/h: '+EUR.format(s.min/60*(+S.settings.rate)+s.mat)+'\n';
+  t+='Arbeitszeit: '+fmtHM(s.min)+' h ('+NUM.format(s.min/60)+' h)\nMaterial (netto): '+EUR.format(s.mat)+'\n';
+  if(+S.settings.rate) t+='Arbeit netto bei '+EUR.format(+S.settings.rate)+'/h: '+EUR.format(laborEUR(s.min))+'\n';
+  if(+S.settings.rate) t+='Gesamt netto bei '+EUR.format(+S.settings.rate)+'/h: '+EUR.format(s.min/60*(+S.settings.rate)+s.mat)+'\n';
   if(z.length) t+='\nZeiten\n'+z.map(function(e){return d(e.date)+'  '+fmtHM(e.minutes)+' h  '+(e.text||'Arbeitszeit')}).join('\n')+'\n';
   if(m.length) t+='\nMaterial\n'+m.map(function(e){return d(e.date)+'  '+NUM.format(e.qty)+' '+e.unit+' '+e.name+(e.unitPrice?'  '+EUR.format(e.qty*e.unitPrice):'')}).join('\n')+'\n';
   return t;
@@ -690,6 +705,8 @@ var A={
   importPick:function(){var f=$('#importFile'); if(f) f.click()},
   tab:function(t){navTab(t.dataset.tab);window.scrollTo(0,0)},
   timerToggle:timerToggle,
+  timerPause:timerPause,
+  timerResume:timerResume,
   newEntry:function(t){entrySheet({type:t.dataset.type,projectId:t.dataset.project})},
   editEntry:function(t){entrySheet({id:t.dataset.id})},
   sheetType:function(t){SH.type=t.dataset.t;applySheetType()},
